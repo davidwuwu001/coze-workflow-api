@@ -5,7 +5,6 @@ import { CozeAPI, WorkflowEventType } from '@coze/api';
 // 导入自定义UI组件
 import Card from './components/Card';
 import Button from './components/Button';
-import Input from './components/Input';
 import Alert from './components/Alert';
 import CollapsibleSection from './components/CollapsibleSection';
 import { ResultSkeleton } from './components/SkeletonLoader';
@@ -25,7 +24,7 @@ import { Workflow } from './types/workflow';
 const WorkflowTest: React.FC = () => {
   // 基础配置状态
   // 认证Token状态，用于API身份验证
-  const [authToken, setAuthToken] = useState('sat_2Tbrpr7NNNHzijmBA0u2WFIwURfdnJX3XSYOUyH6tIErlnA7DNSP32Dp6k5tCidP');
+  const [authToken] = useState('sat_2Tbrpr7NNNHzijmBA0u2WFIwURfdnJX3XSYOUyH6tIErlnA7DNSP32Dp6k5tCidP');
   
   // 工作空间ID状态
   const [workspaceId] = useState(() => {
@@ -121,7 +120,7 @@ const WorkflowTest: React.FC = () => {
           let processedOutput = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
           
           // 修复URL链接：移除末尾多余的斜杠和反引号
-          processedOutput = processedOutput.replace(/`([^`]*)`\s*"/g, (match, url) => {
+          processedOutput = processedOutput.replace(/`([^`]*)`\s*"/g, (_, url) => {
             // 移除URL末尾的斜杠
             const cleanUrl = url.replace(/\/$/, '');
             return `"${cleanUrl}"`;
@@ -151,7 +150,7 @@ const WorkflowTest: React.FC = () => {
             (() => {
               let historyOutput = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
               // 同样修复历史记录中的URL链接
-              historyOutput = historyOutput.replace(/`([^`]*)`\s*"/g, (match, url) => {
+              historyOutput = historyOutput.replace(/`([^`]*)`\s*"/g, (_, url) => {
                 const cleanUrl = url.replace(/\/$/, '');
                 return `"${cleanUrl}"`;
               });
@@ -306,7 +305,7 @@ const WorkflowTest: React.FC = () => {
         await executeStreamWorkflow(apiClient, workflowId, workflowParameters);
       } else {
         // 异步执行模式 - 使用新的异步API
-        await executeAsyncWorkflow(apiClient, workflowId, workflowParameters);
+        await executeAsyncWorkflow(workflowId, workflowParameters);
       }
 
     } catch (err: any) {
@@ -403,11 +402,10 @@ const WorkflowTest: React.FC = () => {
 
   /**
    * 异步执行工作流
-   * @param apiClient Coze API客户端
    * @param workflowId 工作流ID
    * @param workflowParameters 工作流参数
    */
-  const executeAsyncWorkflow = async (apiClient: CozeAPI, workflowId: string, workflowParameters: Record<string, any>) => {
+  const executeAsyncWorkflow = async (workflowId: string, workflowParameters: Record<string, any>) => {
     try {
       // 使用fetch直接调用异步API，因为SDK可能不支持异步模式
       const response = await fetch('https://api.coze.cn/v1/workflow/run', {
