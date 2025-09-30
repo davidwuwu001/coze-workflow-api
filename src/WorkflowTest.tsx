@@ -39,8 +39,7 @@ const WorkflowTest: React.FC = () => {
       type: ParameterType.STRING
     }];
   });
-  // 参数格式状态，支持不同的参数传递格式
-  const [parameterFormat, setParameterFormat] = useState('simple');
+
   // API端点状态，支持不同的Coze API地址
   const [apiEndpoint, setApiEndpoint] = useState('https://api.coze.cn/v1/workflow/run');
   

@@ -1,6 +1,6 @@
-# Coze工作流测试平台
+# Coze Workflow Hub
 
-一个基于React和TypeScript构建的Coze工作流API测试工具，提供直观的界面来测试和调试Coze工作流。
+一个用于测试和管理 Coze 工作流的 Web 应用程序。
 
 ## 🚀 功能特性
 
