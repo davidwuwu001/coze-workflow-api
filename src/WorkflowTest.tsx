@@ -10,11 +10,13 @@ import Alert from './components/Alert';
 import CollapsibleSection from './components/CollapsibleSection';
 import { ResultSkeleton } from './components/SkeletonLoader';
 import HistoryPanel from './components/HistoryPanel';
+import WorkflowSelector from './components/WorkflowSelector';
 // 导入类型定义和工具函数
 import { HistoryRecord } from './types/history';
 import { HistoryStorageUtil } from './utils/historyStorage';
 import { Parameter, ParameterType } from './types/parameter';
 import ParameterInput from './components/ParameterInput';
+import { Workflow } from './types/workflow';
 
 /**
  * 通用工作流测试页面 - 测试Coze工作流API调用
@@ -24,24 +26,40 @@ const WorkflowTest: React.FC = () => {
   // 基础配置状态
   // 认证Token状态，用于API身份验证
   const [authToken, setAuthToken] = useState('sat_2Tbrpr7NNNHzijmBA0u2WFIwURfdnJX3XSYOUyH6tIErlnA7DNSP32Dp6k5tCidP');
+  
+  // 工作空间ID状态
+  const [workspaceId] = useState(() => {
+    return localStorage.getItem('lastWorkspaceId') || '7549775278664024079';
+  });
+  
+  // 选中的工作流状态
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | undefined>();
+  
   // 工作流ID状态，从本地存储读取上次使用的ID
   const [workflowId, setWorkflowId] = useState(() => {
     // 从localStorage读取上次保存的workflowId，如果没有则使用默认值
     return localStorage.getItem('lastWorkflowId') || '7549776785002283060';
   });
+  
   // 动态参数列表状态，支持多个参数的添加和管理
   const [parameters, setParameters] = useState<Parameter[]>(() => {
     // 初始化一个默认参数，保持向后兼容
     return [{
       id: '1',
-      name: 'key_word',
-      value: 'https://v.douyin.com/ipT9jS1Z7nc/',
+      name: 'input',
+      value: 'https://www.douyin.com/video/7496156026689834278',
       type: ParameterType.STRING
     }];
   });
 
-  // API端点状态，支持不同的Coze API地址
-  const [apiEndpoint, setApiEndpoint] = useState('https://api.coze.cn/v1/workflow/run');
+
+  
+  // 工作流执行模式状态：'stream' 流式模式，'async' 异步模式
+  const [executionMode, setExecutionMode] = useState<'stream' | 'async'>('stream');
+  
+  // 异步执行相关状态
+  const [asyncExecuteId, setAsyncExecuteId] = useState<string>(''); // 异步执行ID
+  const [showQueryButton, setShowQueryButton] = useState(false); // 是否显示查询按钮
   
   // UI状态管理
   // 加载状态，控制按钮和输入框的禁用状态
@@ -56,6 +74,104 @@ const WorkflowTest: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   // 复制操作反馈信息状态
   const [copyFeedback, setCopyFeedback] = useState<string>('');
+
+  /**
+   * 查询异步工作流执行结果
+   */
+  const handleQueryAsyncResult = async () => {
+    if (!asyncExecuteId || !workflowId) {
+      setError('没有可查询的执行ID或工作流ID');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // 使用正确的API端点格式：/v1/workflows/{workflow_id}/run_histories/{execute_id}
+      const response = await fetch(`https://api.coze.cn/v1/workflows/${workflowId}/run_histories/${asyncExecuteId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.msg || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      console.log('查询结果响应:', responseData);
+      setDebugInfo(prev => [...prev, `查询结果响应: ${JSON.stringify(responseData, null, 2)}`]);
+
+      // 处理查询结果
+      const runData = responseData.data;
+      if (runData && runData.length > 0) {
+        const firstRecord = runData[0]; // 取第一条记录
+        const status = firstRecord.execute_status; // 使用正确的字段名
+        const output = firstRecord.output;
+        
+        // 将查询详情添加到调试信息中
+        setDebugInfo(prev => [...prev, `查询成功，状态: ${status}`, `执行ID: ${asyncExecuteId}`]);
+        
+        if (status === 'Success' && output) {
+          // 执行成功时，处理output并显示在执行结果区域
+          let processedOutput = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+          
+          // 修复URL链接：移除末尾多余的斜杠和反引号
+          processedOutput = processedOutput.replace(/`([^`]*)`\s*"/g, (match, url) => {
+            // 移除URL末尾的斜杠
+            const cleanUrl = url.replace(/\/$/, '');
+            return `"${cleanUrl}"`;
+          });
+          
+          setResult(processedOutput);
+          setDebugInfo(prev => [...prev, '工作流执行成功，已获取最终结果']);
+        } else if (status === 'Failed') {
+          // 执行失败时显示错误信息
+          const errorMsg = firstRecord.error_message || '未知错误';
+          setResult(`执行失败: ${errorMsg}`);
+          setDebugInfo(prev => [...prev, `执行失败: ${errorMsg}`]);
+        } else if (status === 'Running') {
+          // 仍在执行中
+          setResult('工作流仍在执行中，请稍后再次查询');
+          setDebugInfo(prev => [...prev, '工作流仍在执行中']);
+        } else {
+          // 其他状态
+          setResult(`当前执行状态: ${status}`);
+          setDebugInfo(prev => [...prev, `当前状态: ${status}`]);
+        }
+        
+        // 更新历史记录
+        HistoryStorageUtil.saveRecord({
+          input: `查询异步执行结果 (ID: ${asyncExecuteId})`,
+          result: status === 'Success' && output ? 
+            (() => {
+              let historyOutput = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+              // 同样修复历史记录中的URL链接
+              historyOutput = historyOutput.replace(/`([^`]*)`\s*"/g, (match, url) => {
+                const cleanUrl = url.replace(/\/$/, '');
+                return `"${cleanUrl}"`;
+              });
+              return historyOutput;
+            })() : 
+            `状态: ${status}`,
+          success: status === 'Success'
+        });
+      } else {
+        throw new Error('未能获取到执行结果数据');
+      }
+    } catch (err: any) {
+      console.error('查询执行结果失败:', err);
+      const errorMessage = err.message || '查询失败';
+      setError(`查询失败: ${errorMessage}`);
+      setDebugInfo(prev => [...prev, `查询失败: ${errorMessage}`]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   /**
    * 复制链接到剪贴板
@@ -76,6 +192,16 @@ const WorkflowTest: React.FC = () => {
       // 3秒后清除错误提示
       setTimeout(() => setCopyFeedback(''), 3000);
     }
+  };
+
+  /**
+   * 工作流选择处理函数
+   * @param workflow 选中的工作流对象
+   */
+  const handleWorkflowSelect = (workflow: Workflow) => {
+    setSelectedWorkflow(workflow);
+    setWorkflowId(workflow.workflow_id);
+    localStorage.setItem('lastWorkflowId', workflow.workflow_id);
   };
 
   /**
@@ -174,67 +300,14 @@ const WorkflowTest: React.FC = () => {
         `参数: ${JSON.stringify(workflowParameters, null, 2)}` // 格式化显示参数对象
       ]);
 
-      // 使用SDK调用工作流，采用流式响应方式
-      const response = await apiClient.workflows.runs.stream({
-        workflow_id: workflowId, // 工作流ID
-        parameters: workflowParameters // 传递的参数
-      });
-
-      // 输出SDK响应信息
-      console.log('SDK响应:', response);
-      setDebugInfo(prev => [...prev, `SDK响应类型: ${typeof response}`]);
-
-      // 处理流式响应数据
-      let resultContent = ''; // 存储最终结果内容
-      let hasContent = false; // 标记是否收到了有效内容
-
-      // 遍历流式响应的每个数据块
-      for await (const chunk of response) {
-        console.log('收到数据块:', chunk);
-        // 将收到的数据块信息添加到调试信息中
-        setDebugInfo(prev => [...prev, `收到数据块: ${JSON.stringify(chunk, null, 2)}`]);
-        
-        // 检查数据块的事件类型
-        if (chunk.event === WorkflowEventType.DONE) {
-          // 工作流执行完成
-          if (chunk.data) {
-            // 处理返回的数据，如果是对象则转换为JSON字符串
-            resultContent = typeof chunk.data === 'string' ? chunk.data : JSON.stringify(chunk.data, null, 2);
-            hasContent = true; // 标记已收到内容
-          }
-          setDebugInfo(prev => [...prev, '工作流执行完成']);
-          break; // 跳出循环
-        } else if (chunk.event === WorkflowEventType.ERROR) {
-          // 工作流执行失败
-          const errorData = chunk.data as any;
-          // 提取错误信息，如果没有则使用默认错误信息
-          const errorMsg = errorData?.error_message || '工作流执行失败';
-          throw new Error(errorMsg); // 抛出错误，进入catch块处理
-        } else if (chunk.data) {
-          // 处理其他类型的数据块
-          const chunkData = typeof chunk.data === 'string' ? chunk.data : JSON.stringify(chunk.data, null, 2);
-          resultContent += chunkData + '\n'; // 累加数据内容
-          hasContent = true;
-        }
+      // 根据执行模式选择不同的API调用方式
+      if (executionMode === 'stream') {
+        // 流式执行模式 - 使用现有的流式API
+        await executeStreamWorkflow(apiClient, workflowId, workflowParameters);
+      } else {
+        // 异步执行模式 - 使用新的异步API
+        await executeAsyncWorkflow(apiClient, workflowId, workflowParameters);
       }
-
-      // 如果没有收到任何内容，设置默认提示信息
-      if (!hasContent) {
-        resultContent = '工作流执行完成，但未返回具体结果';
-      }
-
-      // 输出最终结果到控制台
-      console.log('最终结果:', resultContent);
-      // 设置结果到状态中，在界面显示
-      setResult(resultContent);
-      setDebugInfo(prev => [...prev, '工作流执行成功，已获取结果']);
-      
-      // 保存成功的执行记录到历史记录中
-      HistoryStorageUtil.saveRecord({
-        input: parameters.map(p => `${p.name}: ${p.value}`).join(', '), // 输入内容（多个参数）
-        result: resultContent, // 执行结果
-        success: true // 标记为成功
-      });
 
     } catch (err: any) {
       // 捕获并处理执行过程中的错误
@@ -257,6 +330,130 @@ const WorkflowTest: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  /**
+   * 流式执行工作流
+   * @param apiClient Coze API客户端
+   * @param workflowId 工作流ID
+   * @param workflowParameters 工作流参数
+   */
+  const executeStreamWorkflow = async (apiClient: CozeAPI, workflowId: string, workflowParameters: Record<string, any>) => {
+    // 使用SDK调用工作流，采用流式响应方式
+    const response = await apiClient.workflows.runs.stream({
+      workflow_id: workflowId, // 工作流ID
+      parameters: workflowParameters // 传递的参数
+    });
+
+    // 输出SDK响应信息
+    console.log('SDK响应:', response);
+    setDebugInfo(prev => [...prev, `SDK响应类型: ${typeof response}`]);
+
+    // 处理流式响应数据
+    let resultContent = ''; // 存储最终结果内容
+    let hasContent = false; // 标记是否收到了有效内容
+
+    // 遍历流式响应的每个数据块
+    for await (const chunk of response) {
+      console.log('收到数据块:', chunk);
+      // 将收到的数据块信息添加到调试信息中
+      setDebugInfo(prev => [...prev, `收到数据块: ${JSON.stringify(chunk, null, 2)}`]);
+      
+      // 检查数据块的事件类型
+      if (chunk.event === WorkflowEventType.DONE) {
+        // 工作流执行完成
+        if (chunk.data) {
+          // 处理返回的数据，如果是对象则转换为JSON字符串
+          resultContent = typeof chunk.data === 'string' ? chunk.data : JSON.stringify(chunk.data, null, 2);
+          hasContent = true; // 标记已收到内容
+        }
+        setDebugInfo(prev => [...prev, '工作流执行完成']);
+        break; // 跳出循环
+      } else if (chunk.event === WorkflowEventType.ERROR) {
+        // 工作流执行失败
+        const errorData = chunk.data as any;
+        // 提取错误信息，如果没有则使用默认错误信息
+        const errorMsg = errorData?.error_message || '工作流执行失败';
+        throw new Error(errorMsg); // 抛出错误，进入catch块处理
+      } else if (chunk.data) {
+        // 处理其他类型的数据块
+        const chunkData = typeof chunk.data === 'string' ? chunk.data : JSON.stringify(chunk.data, null, 2);
+        resultContent += chunkData + '\n'; // 累加数据内容
+        hasContent = true;
+      }
+    }
+
+    // 如果没有收到任何内容，设置默认提示信息
+    if (!hasContent) {
+      resultContent = '工作流执行完成，但未返回具体结果';
+    }
+
+    // 输出最终结果到控制台
+    console.log('最终结果:', resultContent);
+    // 设置结果到状态中，在界面显示
+    setResult(resultContent);
+    setDebugInfo(prev => [...prev, '工作流执行成功，已获取结果']);
+    
+    // 保存成功的执行记录到历史记录中
+    HistoryStorageUtil.saveRecord({
+      input: parameters.map(p => `${p.name}: ${p.value}`).join(', '), // 输入内容（多个参数）
+      result: resultContent, // 执行结果
+      success: true // 标记为成功
+    });
+  };
+
+  /**
+   * 异步执行工作流
+   * @param apiClient Coze API客户端
+   * @param workflowId 工作流ID
+   * @param workflowParameters 工作流参数
+   */
+  const executeAsyncWorkflow = async (apiClient: CozeAPI, workflowId: string, workflowParameters: Record<string, any>) => {
+    try {
+      // 使用fetch直接调用异步API，因为SDK可能不支持异步模式
+      const response = await fetch('https://api.coze.cn/v1/workflow/run', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          is_async: true, // 设置为异步模式
+          workflow_id: workflowId,
+          parameters: workflowParameters
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.msg || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      console.log('异步执行响应:', responseData);
+      setDebugInfo(prev => [...prev, `异步执行响应: ${JSON.stringify(responseData, null, 2)}`]);
+
+      // 提取执行ID
+      const executeId = responseData.data?.execute_id || responseData.execute_id;
+      if (executeId) {
+        setAsyncExecuteId(executeId);
+        setShowQueryButton(true);
+        setResult(`异步工作流已启动\n执行ID: ${executeId}\n\n请点击"查询执行结果"按钮查看运行状态和结果。`);
+        setDebugInfo(prev => [...prev, `异步工作流启动成功，执行ID: ${executeId}`]);
+        
+        // 保存异步执行记录
+        HistoryStorageUtil.saveRecord({
+          input: parameters.map(p => `${p.name}: ${p.value}`).join(', '),
+          result: `异步执行ID: ${executeId}`,
+          success: true
+        });
+      } else {
+        throw new Error('未能获取到执行ID');
+      }
+    } catch (error) {
+       console.error('异步执行失败:', error);
+       throw error; // 重新抛出错误，让上层catch处理
+     }
+   };
 
   /**
    * 清空结果和错误信息
@@ -413,12 +610,20 @@ const WorkflowTest: React.FC = () => {
         {/* 页面标题区域 */}
         <div className="text-center mb-6 sm:mb-8 animate-fade-in">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2 sm:mb-3 drop-shadow-lg">
-            Coze工作流测试平台
+            Coze-workflow-hub
           </h1>
           <p className="text-white/90 text-sm sm:text-base lg:text-lg px-4">
             通用工作流API调用测试工具
           </p>
         </div>
+
+        {/* 工作流选择器 */}
+        <WorkflowSelector
+          selectedWorkflow={selectedWorkflow}
+          onWorkflowSelect={handleWorkflowSelect}
+          initialToken={authToken}
+          initialWorkspaceId={workspaceId}
+        />
 
         {/* 输入区域卡片 */}
         <CollapsibleSection
@@ -428,34 +633,6 @@ const WorkflowTest: React.FC = () => {
           titleClassName="bg-blue-50 hover:bg-blue-100"
           contentClassName="space-y-4 sm:space-y-6"
         >
-            {/* 工作流ID输入框 */}
-            <Input
-              label="工作流ID"
-              value={workflowId}
-              onChange={(e) => setWorkflowId(e.target.value)}
-              placeholder="请输入工作流ID"
-              disabled={isLoading}
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-              }
-            />
-            
-            {/* 认证Token输入框 */}
-            <Input
-              label="认证Token"
-              value={authToken}
-              onChange={(e) => setAuthToken(e.target.value)}
-              placeholder="请输入Coze API Token (以sat_开头)"
-              disabled={isLoading}
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
-                </svg>
-              }
-            />
-            
             {/* 动态参数输入组件 */}
             <ParameterInput
               parameters={parameters}
@@ -463,29 +640,44 @@ const WorkflowTest: React.FC = () => {
               disabled={isLoading}
             />
             
-            {/* API端点选择器 */}
+            {/* 执行模式选择器 */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">
-                API端点
+                执行模式
               </label>
-              <select
-                value={apiEndpoint}
-                onChange={(e) => setApiEndpoint(e.target.value)}
-                disabled={isLoading}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
-              >
-                <option value="https://api.coze.cn/v1/workflow/run">Coze CN - 工作流运行</option>
-                <option value="https://api.coze.com/v1/workflow/run">Coze COM - 工作流运行</option>
-                <option value="https://api.coze.cn/v1/workflows/run">Coze CN - 工作流运行 (复数)</option>
-                <option value="https://api.coze.com/v1/workflows/run">Coze COM - 工作流运行 (复数)</option>
-              </select>
+              <div className="flex space-x-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="executionMode"
+                    value="stream"
+                    checked={executionMode === 'stream'}
+                    onChange={(e) => setExecutionMode(e.target.value as 'stream' | 'async')}
+                    disabled={isLoading}
+                    className="mr-2 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">流式执行</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="executionMode"
+                    value="async"
+                    checked={executionMode === 'async'}
+                    onChange={(e) => setExecutionMode(e.target.value as 'stream' | 'async')}
+                    disabled={isLoading}
+                    className="mr-2 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">异步执行</span>
+                </label>
+              </div>
               <p className="text-xs text-gray-500 mt-1">
-                选择不同的API端点来测试连接性
+                流式执行：实时返回结果流；异步执行：后台执行，可查询结果
               </p>
             </div>
 
-            {/* 操作按钮组 */}
-            <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+            {/* 操作按钮组 - 移动端和桌面端都横向排列 */}
+            <div className="flex flex-row space-x-2 sm:space-x-4">
               {/* 执行工作流按钮 */}
               <Button
                 onClick={handleExecuteWorkflow}
@@ -493,9 +685,10 @@ const WorkflowTest: React.FC = () => {
                 loading={isLoading}
                 variant="primary"
                 size="lg"
-                className="flex-1 w-full sm:w-auto"
+                className="flex-1 text-xs sm:text-sm px-2 sm:px-6"
               >
-                {isLoading ? '执行中...' : '执行工作流'}
+                <span className="hidden sm:inline">{isLoading ? '执行中...' : '执行工作流'}</span>
+                <span className="sm:hidden">{isLoading ? '执行中' : '执行'}</span>
               </Button>
               
               {/* 历史记录按钮 */}
@@ -503,12 +696,13 @@ const WorkflowTest: React.FC = () => {
                 onClick={toggleHistory}
                 variant="outline"
                 size="lg"
-                className="px-6 w-full sm:w-auto"
+                className="flex-1 text-xs sm:text-sm px-2 sm:px-6"
               >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                历史记录
+                <span className="hidden sm:inline">历史记录</span>
+                <span className="sm:hidden">历史</span>
               </Button>
               
               {/* 清空按钮 */}
@@ -516,7 +710,7 @@ const WorkflowTest: React.FC = () => {
                 onClick={handleClear}
                 variant="secondary"
                 size="lg"
-                className="px-6 w-full sm:w-auto"
+                className="flex-1 text-xs sm:text-sm px-2 sm:px-6"
               >
                 清空
               </Button>
@@ -588,8 +782,22 @@ const WorkflowTest: React.FC = () => {
             titleClassName="bg-green-50 hover:bg-green-100"
             contentClassName="space-y-4"
           >
-            {/* 复制结果按钮 */}
-            <div className="flex justify-end">
+            {/* 复制结果按钮和查询按钮 */}
+            <div className="flex justify-end space-x-2">
+              {/* 异步模式查询按钮 */}
+              {showQueryButton && (
+                <Button
+                  onClick={handleQueryAsyncResult}
+                  variant="primary"
+                  size="sm"
+                  disabled={isLoading}
+                  className="px-4"
+                >
+                  查询执行结果
+                </Button>
+              )}
+              
+              {/* 复制结果按钮 */}
               <Button
                 onClick={handleCopyResult}
                 variant="success"

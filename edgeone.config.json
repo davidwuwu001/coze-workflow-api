@@ -1,6 +1,6 @@
 {
   "name": "coze-workflow-hub",
-  "description": "Coze工作流测试平台",
+  "description": "Coze-workflow-hub",
   "version": "1.0.0",
   "build": {
     "command": "npm run build",
