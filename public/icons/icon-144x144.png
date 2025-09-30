@@ -1,0 +1,47 @@
+<svg width="144" height="144" viewBox="0 0 144 144" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景圆形 -->
+  <circle cx="72" cy="72" r="72" fill="#3b82f6"/>
+  
+  <!-- 渐变定义 -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.9" />
+      <stop offset="100%" style="stop-color:#e5e7eb;stop-opacity:0.8" />
+    </linearGradient>
+  </defs>
+  
+  <!-- 主要图标 - 代表工作流的连接节点 -->
+  <g transform="translate(72,72)">
+    <!-- 中心节点 -->
+    <circle cx="0" cy="0" r="12" fill="url(#gradient2)" stroke="#1e40af" stroke-width="1.5"/>
+    
+    <!-- 上方节点 -->
+    <circle cx="0" cy="-24" r="7" fill="url(#gradient2)" stroke="#1e40af" stroke-width="1"/>
+    <line x1="0" y1="-12" x2="0" y2="-17" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- 左方节点 -->
+    <circle cx="-24" cy="0" r="7" fill="url(#gradient2)" stroke="#1e40af" stroke-width="1"/>
+    <line x1="-12" y1="0" x2="-17" y2="0" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- 右方节点 -->
+    <circle cx="24" cy="0" r="7" fill="url(#gradient2)" stroke="#1e40af" stroke-width="1"/>
+    <line x1="12" y1="0" x2="17" y2="0" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- 下方节点 -->
+    <circle cx="0" cy="24" r="7" fill="url(#gradient2)" stroke="#1e40af" stroke-width="1"/>
+    <line x1="0" y1="12" x2="0" y2="17" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- 中心图标 - C字母代表Coze -->
+    <text x="0" y="4" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#1e40af">C</text>
+  </g>
+  
+  <!-- 装饰性元素 -->
+  <circle cx="36" cy="36" r="2" fill="#ffffff" opacity="0.6"/>
+  <circle cx="108" cy="36" r="1.5" fill="#ffffff" opacity="0.4"/>
+  <circle cx="36" cy="108" r="1.5" fill="#ffffff" opacity="0.4"/>
+  <circle cx="108" cy="108" r="2" fill="#ffffff" opacity="0.6"/>
+</svg>
