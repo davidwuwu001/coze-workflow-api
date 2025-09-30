@@ -13,20 +13,15 @@ import HistoryPanel from './components/HistoryPanel';
 // 导入类型定义和工具函数
 import { HistoryRecord } from './types/history';
 import { HistoryStorageUtil } from './utils/historyStorage';
+import { Parameter, ParameterType } from './types/parameter';
+import ParameterInput from './components/ParameterInput';
 
 /**
  * 通用工作流测试页面 - 测试Coze工作流API调用
  * 功能：支持自定义工作流ID和输入参数，调用工作流并显示结果
  */
 const WorkflowTest: React.FC = () => {
-  // 输入URL状态，默认为抖音链接示例
-  const [inputUrl, setInputUrl] = useState('https://v.douyin.com/ipT9jS1Z7nc/');
-  // 参数名称状态，用于指定传递给工作流的参数名
-  const [parameterName, setParameterName] = useState('key_word');
-  // 参数格式状态，支持不同的参数传递格式
-  const [parameterFormat, setParameterFormat] = useState('simple');
-  // API端点状态，支持不同的Coze API地址
-  const [apiEndpoint, setApiEndpoint] = useState('https://api.coze.cn/v1/workflow/run');
+  // 基础配置状态
   // 认证Token状态，用于API身份验证
   const [authToken, setAuthToken] = useState('sat_2Tbrpr7NNNHzijmBA0u2WFIwURfdnJX3XSYOUyH6tIErlnA7DNSP32Dp6k5tCidP');
   // 工作流ID状态，从本地存储读取上次使用的ID
@@ -34,6 +29,22 @@ const WorkflowTest: React.FC = () => {
     // 从localStorage读取上次保存的workflowId，如果没有则使用默认值
     return localStorage.getItem('lastWorkflowId') || '7549776785002283060';
   });
+  // 动态参数列表状态，支持多个参数的添加和管理
+  const [parameters, setParameters] = useState<Parameter[]>(() => {
+    // 初始化一个默认参数，保持向后兼容
+    return [{
+      id: '1',
+      name: 'key_word',
+      value: 'https://v.douyin.com/ipT9jS1Z7nc/',
+      type: ParameterType.STRING
+    }];
+  });
+  // 参数格式状态，支持不同的参数传递格式
+  const [parameterFormat, setParameterFormat] = useState('simple');
+  // API端点状态，支持不同的Coze API地址
+  const [apiEndpoint, setApiEndpoint] = useState('https://api.coze.cn/v1/workflow/run');
+  
+  // UI状态管理
   // 加载状态，控制按钮和输入框的禁用状态
   const [isLoading, setIsLoading] = useState(false);
   // 执行结果状态，存储API返回的结果
@@ -73,15 +84,16 @@ const WorkflowTest: React.FC = () => {
    * 这是整个应用的核心功能，负责调用Coze工作流API
    */
   const handleExecuteWorkflow = async () => {
-    // 验证参数名称是否为空
-    if (!parameterName.trim()) {
-      setError('请输入有效的参数名称');
+    // 验证参数列表是否为空
+    if (parameters.length === 0) {
+      setError('请至少添加一个参数');
       return;
     }
 
-    // 验证输入内容是否为空
-    if (!inputUrl.trim()) {
-      setError('请输入有效的输入内容');
+    // 验证所有参数是否都有名称和值
+    const invalidParams = parameters.filter(param => !param.name.trim() || !param.value.trim());
+    if (invalidParams.length > 0) {
+      setError('请确保所有参数都有名称和值');
       return;
     }
 
@@ -113,17 +125,44 @@ const WorkflowTest: React.FC = () => {
         baseURL: 'https://api.coze.cn' // 设置API基础URL
       });
 
-      // 构建传递给工作流的参数对象
-      const parameters: Record<string, any> = {
-        [parameterName]: inputUrl // 使用动态参数名和用户输入的值
-      };
+      // 构建传递给工作流的参数对象，支持多个参数
+      const workflowParameters: Record<string, any> = {};
+      parameters.forEach(param => {
+        // 根据参数类型转换值
+        let convertedValue: any = param.value;
+        switch (param.type) {
+          case ParameterType.NUMBER:
+            convertedValue = Number(param.value);
+            break;
+          case ParameterType.BOOLEAN:
+            convertedValue = param.value.toLowerCase() === 'true';
+            break;
+          case ParameterType.OBJECT:
+            try {
+              convertedValue = JSON.parse(param.value);
+            } catch {
+              convertedValue = param.value; // 如果解析失败，保持字符串
+            }
+            break;
+          case ParameterType.ARRAY:
+            try {
+              convertedValue = JSON.parse(param.value);
+            } catch {
+              convertedValue = param.value.split(',').map(v => v.trim()); // 逗号分隔的数组
+            }
+            break;
+          default:
+            convertedValue = param.value; // 字符串类型保持不变
+        }
+        workflowParameters[param.name] = convertedValue;
+      });
 
       // 输出详细的请求信息到控制台，便于调试
       console.log('=== SDK请求详情 ===');
       console.log('Base URL:', 'https://api.coze.cn');
       console.log('Token:', `${authToken.substring(0, 20)}...`); // 只显示token前20位，保护隐私
       console.log('工作流ID:', workflowId);
-      console.log('参数:', parameters);
+      console.log('参数:', workflowParameters);
       console.log('==================');
 
       // 将请求详情添加到界面的调试信息中
@@ -131,15 +170,15 @@ const WorkflowTest: React.FC = () => {
         `Base URL: https://api.coze.cn`,
         `Token: ${authToken.substring(0, 20)}...`, // 隐藏完整token
         `工作流ID: ${workflowId}`,
-        `参数名称: ${parameterName}`,
-        `参数值: ${inputUrl}`,
-        `参数: ${JSON.stringify(parameters, null, 2)}` // 格式化显示参数对象
+        `参数数量: ${parameters.length}`,
+        ...parameters.map(param => `${param.name}: ${param.value} (${param.type})`),
+        `参数: ${JSON.stringify(workflowParameters, null, 2)}` // 格式化显示参数对象
       ]);
 
       // 使用SDK调用工作流，采用流式响应方式
       const response = await apiClient.workflows.runs.stream({
         workflow_id: workflowId, // 工作流ID
-        parameters: parameters // 传递的参数
+        parameters: workflowParameters // 传递的参数
       });
 
       // 输出SDK响应信息
@@ -193,7 +232,7 @@ const WorkflowTest: React.FC = () => {
       
       // 保存成功的执行记录到历史记录中
       HistoryStorageUtil.saveRecord({
-        input: inputUrl, // 输入内容
+        input: parameters.map(p => `${p.name}: ${p.value}`).join(', '), // 输入内容（多个参数）
         result: resultContent, // 执行结果
         success: true // 标记为成功
       });
@@ -209,7 +248,7 @@ const WorkflowTest: React.FC = () => {
       
       // 保存失败的执行记录到历史记录中
       HistoryStorageUtil.saveRecord({
-        input: inputUrl, // 输入内容
+        input: parameters.map(p => `${p.name}: ${p.value}`).join(', '), // 输入内容（多个参数）
         result: '', // 结果为空
         success: false, // 标记为失败
         error: errorMessage // 错误信息
@@ -251,7 +290,30 @@ const WorkflowTest: React.FC = () => {
    * @param record 选中的历史记录
    */
   const handleHistorySelect = (record: HistoryRecord) => {
-    setInputUrl(record.input); // 恢复输入内容
+    // 尝试解析历史记录中的参数信息
+    try {
+      // 解析输入字符串，恢复参数列表
+      const paramPairs = record.input.split(', ');
+      const restoredParameters: Parameter[] = paramPairs.map((pair, index) => {
+        const [name, value] = pair.split(': ');
+        return {
+          id: Date.now().toString() + index,
+          name: name || '',
+          value: value || '',
+          type: ParameterType.STRING
+        };
+      });
+      setParameters(restoredParameters);
+    } catch (err) {
+      // 如果解析失败，创建一个默认参数
+      setParameters([{
+        id: Date.now().toString(),
+        name: 'input',
+        value: record.input,
+        type: ParameterType.STRING
+      }]);
+    }
+    
     setResult(record.result); // 恢复执行结果
     setError(record.error || ''); // 恢复错误信息（如果有）
     setDebugInfo([]); // 清空调试信息
@@ -347,29 +409,26 @@ const WorkflowTest: React.FC = () => {
 
   // 渲染主界面
   return (
-    <div className="min-h-screen gradient-bg py-8">
-      <div className="max-w-4xl mx-auto px-4">
+    <div className="min-h-screen gradient-bg py-4 sm:py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* 页面标题区域 */}
-        <div className="text-center mb-8 animate-fade-in">
-          <h1 className="text-4xl font-bold text-white mb-3 drop-shadow-lg">
+        <div className="text-center mb-6 sm:mb-8 animate-fade-in">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2 sm:mb-3 drop-shadow-lg">
             Coze工作流测试平台
           </h1>
-          <p className="text-white/90 text-lg">
+          <p className="text-white/90 text-sm sm:text-base lg:text-lg px-4">
             通用工作流API调用测试工具
           </p>
         </div>
 
         {/* 输入区域卡片 */}
-        <Card className="mb-6 animate-fade-in glass-effect" hover>
-          <h2 className="text-xl font-semibold mb-6 text-gray-800 flex items-center">
-            {/* 文档图标 */}
-            <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            输入测试数据
-          </h2>
-          
-          <div className="space-y-6">
+        <CollapsibleSection
+          title="输入测试数据"
+          defaultOpen={true}
+          className="mb-4 sm:mb-6 animate-fade-in glass-effect"
+          titleClassName="bg-blue-50 hover:bg-blue-100"
+          contentClassName="space-y-4 sm:space-y-6"
+        >
             {/* 工作流ID输入框 */}
             <Input
               label="工作流ID"
@@ -398,40 +457,12 @@ const WorkflowTest: React.FC = () => {
               }
             />
             
-            {/* 参数名称输入框 */}
-            <Input
-              label="参数名称"
-              value={parameterName}
-              onChange={(e) => setParameterName(e.target.value)}
-              placeholder="请输入参数名称 (如: key_word, input, keyword等)"
+            {/* 动态参数输入组件 */}
+            <ParameterInput
+              parameters={parameters}
+              onParametersChange={setParameters}
               disabled={isLoading}
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a.997.997 0 01-1.414 0l-7-7A1.997 1.997 0 013 12V7a4 4 0 014-4z" />
-                </svg>
-              }
             />
-            
-            {/* 参数格式选择器 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                参数格式
-              </label>
-              <select
-                value={parameterFormat}
-                onChange={(e) => setParameterFormat(e.target.value)}
-                disabled={isLoading}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
-              >
-                <option value="simple">简单格式 (推荐)</option>
-                <option value="nested">嵌套对象格式</option>
-                <option value="array">数组格式</option>
-                <option value="coze_format">Coze官方格式</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                选择不同的参数格式来测试API兼容性
-              </p>
-            </div>
             
             {/* API端点选择器 */}
             <div className="space-y-2">
@@ -453,31 +484,17 @@ const WorkflowTest: React.FC = () => {
                 选择不同的API端点来测试连接性
               </p>
             </div>
-            
-            {/* 输入参数输入框 */}
-            <Input
-              label="输入参数"
-              value={inputUrl}
-              onChange={(e) => setInputUrl(e.target.value)}
-              placeholder="请输入测试数据"
-              disabled={isLoading}
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              }
-            />
 
             {/* 操作按钮组 */}
-            <div className="flex space-x-4">
+            <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
               {/* 执行工作流按钮 */}
               <Button
                 onClick={handleExecuteWorkflow}
-                disabled={isLoading || !inputUrl.trim() || !parameterName.trim() || !workflowId.trim()}
+                disabled={isLoading || parameters.length === 0 || !workflowId.trim()}
                 loading={isLoading}
                 variant="primary"
                 size="lg"
-                className="flex-1"
+                className="flex-1 w-full sm:w-auto"
               >
                 {isLoading ? '执行中...' : '执行工作流'}
               </Button>
@@ -487,7 +504,7 @@ const WorkflowTest: React.FC = () => {
                 onClick={toggleHistory}
                 variant="outline"
                 size="lg"
-                className="px-6"
+                className="px-6 w-full sm:w-auto"
               >
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -500,39 +517,38 @@ const WorkflowTest: React.FC = () => {
                 onClick={handleClear}
                 variant="secondary"
                 size="lg"
-                className="px-6"
+                className="px-6 w-full sm:w-auto"
               >
                 清空
               </Button>
             </div>
-          </div>
-        </Card>
+        </CollapsibleSection>
 
         {/* 加载状态显示 */}
         {isLoading && (
-          <Card className="mb-6 animate-fade-in">
+          <Card className="mb-4 sm:mb-6 animate-fade-in">
             <ResultSkeleton />
           </Card>
         )}
 
         {/* 执行状态日志 - 可折叠区域 */}
         {debugInfo.length > 0 && (
-          <div className="mb-6 animate-fade-in">
+          <div className="mb-4 sm:mb-6 animate-fade-in">
             <CollapsibleSection
               title="执行状态"
               badge={debugInfo.length} // 显示日志条数
               defaultOpen={false} // 默认折叠
             >
-              <div className="max-h-64 overflow-y-auto space-y-2">
+              <div className="max-h-48 sm:max-h-64 overflow-y-auto space-y-2">
                 {/* 遍历显示每条调试信息 */}
                 {debugInfo.map((info, index) => (
-                  <div key={index} className="flex items-start space-x-3 text-sm">
+                  <div key={index} className="flex items-start space-x-2 sm:space-x-3 text-xs sm:text-sm">
                     {/* 步骤编号 */}
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                    <span className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
                       {index + 1}
                     </span>
                     {/* 调试信息内容 */}
-                    <span className="text-gray-700 font-mono">{info}</span>
+                    <span className="text-gray-700 font-mono break-all">{info}</span>
                   </div>
                 ))}
               </div>
@@ -542,11 +558,11 @@ const WorkflowTest: React.FC = () => {
 
         {/* 复制反馈提示 */}
         {copyFeedback && (
-          <div className="mb-6 animate-fade-in">
+          <div className="mb-4 sm:mb-6 animate-fade-in">
             <Alert type="success" onClose={() => setCopyFeedback('')}>
               <div>
-                <h4 className="font-medium">复制成功</h4>
-                <p className="mt-1">{copyFeedback}</p>
+                <h4 className="font-medium text-sm sm:text-base">复制成功</h4>
+                <p className="mt-1 text-xs sm:text-sm break-all">{copyFeedback}</p>
               </div>
             </Alert>
           </div>
@@ -554,11 +570,11 @@ const WorkflowTest: React.FC = () => {
 
         {/* 错误信息显示 */}
         {error && (
-          <div className="mb-6 animate-fade-in">
+          <div className="mb-4 sm:mb-6 animate-fade-in">
             <Alert type="error" onClose={() => setError('')}>
               <div>
-                <h4 className="font-medium">执行失败</h4>
-                <p className="mt-1">{error}</p>
+                <h4 className="font-medium text-sm sm:text-base">执行失败</h4>
+                <p className="mt-1 text-xs sm:text-sm break-all">{error}</p>
               </div>
             </Alert>
           </div>
@@ -566,20 +582,20 @@ const WorkflowTest: React.FC = () => {
 
         {/* 结果显示区域 */}
         {result && (
-          <Card className="mb-6 animate-fade-in" hover>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-                {/* 成功图标 */}
-                <svg className="w-6 h-6 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                执行结果
-              </h2>
-              {/* 复制结果按钮 */}
+          <CollapsibleSection
+            title="执行结果"
+            defaultOpen={true}
+            className="mb-4 sm:mb-6 animate-fade-in"
+            titleClassName="bg-green-50 hover:bg-green-100"
+            contentClassName="space-y-4"
+          >
+            {/* 复制结果按钮 */}
+            <div className="flex justify-end">
               <Button
                 onClick={handleCopyResult}
                 variant="success"
                 size="sm"
+                className="w-full sm:w-auto"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -589,10 +605,10 @@ const WorkflowTest: React.FC = () => {
             </div>
             
             {/* 结果内容显示区域 */}
-            <div className="bg-gray-50 rounded-lg p-6 max-h-96 overflow-y-auto border border-gray-200">
+            <div className="bg-gray-50 rounded-lg p-3 sm:p-6 max-h-64 sm:max-h-96 overflow-y-auto border border-gray-200">
               {renderResult()}
             </div>
-          </Card>
+          </CollapsibleSection>
         )}
 
         {/* 历史记录面板 */}
